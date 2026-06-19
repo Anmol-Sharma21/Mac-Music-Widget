@@ -1,7 +1,8 @@
 //  MenuBarView.swift
 //  The menu-bar popover. Runs in the full app context, so it uses REAL Liquid
-//  Glass (.glassEffect / GlassEffectContainer / .buttonStyle(.glass)) which
-//  renders live here (unlike inside the widget snapshot).
+//  Glass (.glassEffect / .buttonStyle(.glass)) which renders live here. Styled
+//  to mirror the widget: full-bleed blurred artwork + scrim, white content,
+//  circular glass transport controls.
 
 import SwiftUI
 import ServiceManagement
@@ -14,47 +15,52 @@ struct MenuBarView: View {
     private var np: NowPlaying { engine.nowPlaying }
 
     var body: some View {
-        ZStack {
-            backdrop
-            GlassEffectContainer(spacing: 14) {
-                VStack(spacing: 12) {
-                    if engine.needsAutomationPermission { permissionBanner }
+        VStack(spacing: 12) {
+            if engine.needsAutomationPermission { permissionBanner }
 
-                    if showingSettings {
-                        SettingsView(engine: engine)
-                            .padding(14)
-                            .glassEffect(.regular, in: .rect(cornerRadius: 20))
-                    } else {
-                        header
-                        progress
-                        transport
-                    }
-                    footer
-                }
-                .padding(16)
+            if showingSettings {
+                SettingsView(engine: engine)
+                    .padding(14)
+                    .glassEffect(.regular, in: .rect(cornerRadius: 20))
+            } else {
+                nowPlaying
             }
+
+            footer
         }
+        .padding(16)
         .frame(width: 320)
+        .background(backdrop)
         .fixedSize(horizontal: false, vertical: true)
-        .foregroundStyle(.primary)
     }
 
-    // MARK: - Backdrop
+    // MARK: - Backdrop (full-bleed blurred art + scrim, like the widget)
 
-    @ViewBuilder private var backdrop: some View {
-        if let art = engine.artwork, !reduceTransparency {
-            Image(nsImage: art)
-                .resizable().scaledToFill()
-                .frame(width: 320, height: 380)
-                .blur(radius: 70).opacity(0.6)
-                .clipped()
-        } else {
-            LinearGradient(colors: [.purple.opacity(0.4), .blue.opacity(0.28), .pink.opacity(0.32)],
-                           startPoint: .topLeading, endPoint: .bottomTrailing)
+    private var backdrop: some View {
+        ZStack {
+            if let art = engine.artwork, !reduceTransparency {
+                Image(nsImage: art).resizable().scaledToFill().blur(radius: 55)
+            } else if reduceTransparency {
+                Color(.windowBackgroundColor)
+            } else {
+                LinearGradient(colors: [.indigo.opacity(0.55), .purple.opacity(0.5), .pink.opacity(0.45)],
+                               startPoint: .topLeading, endPoint: .bottomTrailing)
+            }
+            Rectangle().fill(.black.opacity(reduceTransparency ? 0 : 0.34))
         }
+        .clipped()
     }
 
-    // MARK: - Header
+    // MARK: - Now playing (white content over the art)
+
+    private var nowPlaying: some View {
+        VStack(spacing: 13) {
+            header
+            progress
+            transport
+        }
+        .foregroundStyle(.white)
+    }
 
     private var header: some View {
         HStack(spacing: 14) {
@@ -64,19 +70,15 @@ struct MenuBarView: View {
                     .font(.headline).lineLimit(2)
                 if !np.artist.isEmpty {
                     Text(np.artist).font(.subheadline)
-                        .foregroundStyle(.secondary).lineLimit(1)
+                        .foregroundStyle(.white.opacity(0.82)).lineLimit(1)
                 }
                 if !np.album.isEmpty, np.album != np.title {
-                    Label(np.album, systemImage: np.source == .spotify ? "music.note.list" : "music.note")
-                        .font(.caption).foregroundStyle(.tertiary).lineLimit(1)
-                        .labelStyle(.titleAndIcon)
+                    Text(np.album).font(.caption)
+                        .foregroundStyle(.white.opacity(0.6)).lineLimit(1)
                 }
             }
             Spacer(minLength: 0)
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(12)
-        .glassEffect(.regular, in: .rect(cornerRadius: 20))
     }
 
     private var artworkThumb: some View {
@@ -85,15 +87,15 @@ struct MenuBarView: View {
                 Image(nsImage: art).resizable().scaledToFill()
             } else {
                 ZStack {
-                    LinearGradient(colors: [.white.opacity(0.2), .black.opacity(0.25)],
+                    LinearGradient(colors: [.white.opacity(0.22), .black.opacity(0.3)],
                                    startPoint: .top, endPoint: .bottom)
-                    Image(systemName: "music.note").font(.title).foregroundStyle(.secondary)
+                    Image(systemName: "music.note").font(.title)
                 }
             }
         }
-        .frame(width: 64, height: 64)
-        .clipShape(.rect(cornerRadius: 14))
-        .shadow(color: .black.opacity(0.25), radius: 6, y: 3)
+        .frame(width: 84, height: 84)
+        .clipShape(.rect(cornerRadius: 16))
+        .shadow(color: .black.opacity(0.35), radius: 8, y: 4)
     }
 
     // MARK: - Progress (live, interpolated between polls)
@@ -103,24 +105,24 @@ struct MenuBarView: View {
             let pos = np.estimatedPosition(at: context.date)
             let dur = max(np.durationSeconds, 0.001)
             VStack(spacing: 4) {
-                ProgressView(value: min(pos, dur), total: dur).tint(.primary)
+                ProgressView(value: min(pos, dur), total: dur).tint(.white)
                 HStack {
                     Text(timeString(pos)).monospacedDigit()
                     Spacer()
                     Text(timeString(np.durationSeconds)).monospacedDigit()
                 }
-                .font(.caption2).foregroundStyle(.secondary)
+                .font(.caption2).foregroundStyle(.white.opacity(0.75))
             }
         }
         .opacity(np.source == .none ? 0.3 : 1)
     }
 
-    // MARK: - Transport (circular Liquid Glass buttons; reflows when hidden)
+    // MARK: - Transport (circular Liquid Glass; reflows when controls hidden)
 
     private var transport: some View {
         HStack(spacing: 12) {
             if engine.settings.showShuffle {
-                glassButton("shuffle", size: 13, prominent: np.isShuffling ?? false) {
+                glassButton("shuffle", size: 13, active: np.isShuffling ?? false) {
                     engine.run(.toggleShuffle)
                 }
             }
@@ -131,7 +133,7 @@ struct MenuBarView: View {
             glassButton("forward.fill", size: 16) { engine.run(.next) }
             if engine.settings.showRepeat {
                 let mode = np.repeatMode ?? .off
-                glassButton(mode.symbol, size: 13, prominent: mode.isActive) {
+                glassButton(mode.symbol, size: 13, active: mode.isActive) {
                     engine.run(.toggleRepeat)
                 }
             }
@@ -142,12 +144,12 @@ struct MenuBarView: View {
 
     @ViewBuilder
     private func glassButton(_ symbol: String, size: CGFloat, prominent: Bool = false,
-                             action: @escaping () -> Void) -> some View {
+                             active: Bool = false, action: @escaping () -> Void) -> some View {
         let label = Image(systemName: symbol)
             .font(.system(size: size, weight: .semibold))
-            .frame(width: size * 2.4, height: size * 2.4)
+            .frame(width: size * 2.5, height: size * 2.5)
             .contentTransition(.symbolEffect(.replace))
-        if prominent {
+        if prominent || active {
             Button(action: action) { label }
                 .buttonStyle(.glassProminent).buttonBorderShape(.circle)
         } else {
@@ -163,13 +165,13 @@ struct MenuBarView: View {
             Button {
                 withAnimation(.smooth(duration: 0.25)) { showingSettings.toggle() }
             } label: {
-                Image(systemName: showingSettings ? "chevron.left" : "gearshape.fill").font(.body)
+                Image(systemName: showingSettings ? "chevron.left" : "gearshape.fill")
             }
             .buttonStyle(.glass).buttonBorderShape(.circle)
             .help(showingSettings ? "Back" : "Settings")
 
             Text(showingSettings ? "Settings" : np.source.displayName)
-                .font(.caption).foregroundStyle(.secondary)
+                .font(.caption).foregroundStyle(.white.opacity(0.75))
 
             Spacer()
             Menu {
@@ -183,6 +185,7 @@ struct MenuBarView: View {
             .menuStyle(.button).buttonStyle(.glass).buttonBorderShape(.circle)
             .fixedSize()
         }
+        .foregroundStyle(.white)
     }
 
     // MARK: - Permission onboarding
