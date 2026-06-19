@@ -197,15 +197,15 @@ final class MusicEngine: ObservableObject {
 
         // Music:   …dur␟songRepeat␟shuffleEnabled
         // Spotify: …dur␟artworkURL␟repeating␟shuffling
-        var isRepeating: Bool?
+        var repeatMode: NowPlaying.RepeatMode?
         var isShuffling: Bool?
         var spotifyArt: String?
         if app == .appleMusic {
-            if f.count >= 7 { isRepeating = (f[6] != "off") }
+            if f.count >= 7 { repeatMode = NowPlaying.RepeatMode(rawValue: f[6]) ?? .off }
             if f.count >= 8 { isShuffling = (f[7] == "true") }
         } else {
             if f.count >= 7, !f[6].isEmpty { spotifyArt = f[6] }
-            if f.count >= 8 { isRepeating = (f[7] == "true") }
+            if f.count >= 8 { repeatMode = (f[7] == "true") ? .all : .off }
             if f.count >= 9 { isShuffling = (f[8] == "true") }
         }
 
@@ -217,7 +217,7 @@ final class MusicEngine: ObservableObject {
             album: f[3],
             positionSeconds: Double(f[4]) ?? 0,
             durationSeconds: duration,
-            isRepeating: isRepeating,
+            repeatMode: repeatMode,
             isShuffling: isShuffling,
             artworkFilename: SharedStore.artworkFileURL?.lastPathComponent,
             artworkToken: "",
@@ -298,7 +298,7 @@ final class MusicEngine: ObservableObject {
             || next.trackKey != previous.trackKey
             || next.state != previous.state
             || next.source != previous.source
-            || next.isRepeating != previous.isRepeating
+            || next.repeatMode != previous.repeatMode
             || next.isShuffling != previous.isShuffling
         if meaningful {
             WidgetCenter.shared.reloadTimelines(ofKind: SharedStore.widgetKind)
@@ -351,7 +351,16 @@ final class MusicEngine: ObservableObject {
             guard nowPlaying.durationSeconds > 0 else { return }
             let fraction = min(max(command.value ?? 0, 0), 1)
             script = MusicScripts.seekTo(app, position: fraction * nowPlaying.durationSeconds)
-        case .toggleRepeat:  script = MusicScripts.setRepeat(app, on: !(nowPlaying.isRepeating ?? false))
+        case .toggleRepeat:
+            // Cycle: Apple Music off → all → one → off; Spotify off ↔ all.
+            let current = nowPlaying.repeatMode ?? .off
+            let next: NowPlaying.RepeatMode
+            if app == .appleMusic {
+                next = current == .off ? .all : (current == .all ? .one : .off)
+            } else {
+                next = current == .off ? .all : .off
+            }
+            script = MusicScripts.setRepeat(app, mode: next)
         case .toggleShuffle: script = MusicScripts.setShuffle(app, on: !(nowPlaying.isShuffling ?? false))
         }
         scriptQueue.async { [weak self] in

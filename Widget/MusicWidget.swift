@@ -1,8 +1,8 @@
 //  MusicWidget.swift
 //  The WidgetKit widget. macOS 26 draws the Liquid Glass *chrome* around the
 //  widget; we provide a full-bleed blurred-artwork background plus frosted
-//  Material panels (real .glassEffect() is currently buggy inside widgets, so
-//  we don't use it here). The view adapts its controls to the widget size.
+//  panels (real .glassEffect() is currently buggy inside widgets). The view
+//  adapts to the widget size and to the user's show/hide settings.
 
 import WidgetKit
 import SwiftUI
@@ -11,18 +11,19 @@ import AppIntents
 
 // MARK: - Timeline
 
-// NOTE: the entry holds ONLY the Codable NowPlaying — no Image. WidgetKit
-// serializes timeline entries, and a SwiftUI Image does NOT survive that round
-// trip (it comes back nil), which is why the artwork vanished. The artwork is
-// loaded from the shared container in the VIEW at render time instead.
+// The entry holds ONLY Codable data (NowPlaying + settings) — never a SwiftUI
+// Image, which does NOT survive WidgetKit's entry serialization. Artwork is
+// loaded from the shared container in the VIEW at render time. Settings are read
+// ONCE here so a single render is internally consistent (and not decoded N times).
 struct MusicEntry: TimelineEntry {
     let date: Date
     let nowPlaying: NowPlaying
+    let settings: MusicGlassSettings
 }
 
 struct Provider: TimelineProvider {
     func placeholder(in context: Context) -> MusicEntry {
-        MusicEntry(date: Date(), nowPlaying: .placeholder)
+        MusicEntry(date: Date(), nowPlaying: .placeholder, settings: .default)
     }
 
     func getSnapshot(in context: Context, completion: @escaping (MusicEntry) -> Void) {
@@ -44,7 +45,9 @@ struct Provider: TimelineProvider {
     }
 
     private func currentEntry() -> MusicEntry {
-        MusicEntry(date: Date(), nowPlaying: SharedStore.readNowPlaying() ?? .nothing)
+        MusicEntry(date: Date(),
+                   nowPlaying: SharedStore.readNowPlaying() ?? .nothing,
+                   settings: SharedStore.readSettings())
     }
 }
 
@@ -64,9 +67,6 @@ struct MusicGlassWidget: Widget {
     var body: some WidgetConfiguration {
         StaticConfiguration(kind: SharedStore.widgetKind, provider: Provider()) { entry in
             MusicWidgetView(entry: entry)
-                .containerBackground(for: .widget) {
-                    ArtworkBackground(artwork: loadArtworkImage(for: entry.nowPlaying))
-                }
         }
         .configurationDisplayName("MusicGlass")
         .description("Now Playing from Apple Music & Spotify, wrapped in Liquid Glass.")
@@ -76,8 +76,7 @@ struct MusicGlassWidget: Widget {
 
 // MARK: - Background
 
-/// Full-bleed blurred artwork (or a gradient) with a legibility scrim. The
-/// system applies its Liquid Glass container chrome on top of this.
+/// Full-bleed blurred artwork (or a gradient) with a legibility scrim.
 private struct ArtworkBackground: View {
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
     let artwork: Image?
@@ -108,20 +107,31 @@ struct MusicWidgetView: View {
     let entry: MusicEntry
 
     private var np: NowPlaying { entry.nowPlaying }
-    private var artwork: Image? { loadArtworkImage(for: np) }
+    private var settings: MusicGlassSettings { entry.settings }
 
     var body: some View {
+        // Load artwork ONCE per render; reuse for both the cover and the backdrop.
+        let art = loadArtworkImage(for: np)
+        return content(art: art)
+            .foregroundStyle(.white)
+            .containerBackground(for: .widget) {
+                ArtworkBackground(artwork: settings.showArtworkBackground ? art : nil)
+            }
+    }
+
+    @ViewBuilder
+    private func content(art: Image?) -> some View {
         switch family {
-        case .systemSmall:  smallLayout
-        case .systemMedium: mediumLayout
-        default:            largeLayout
+        case .systemSmall:  smallLayout(art: art)
+        case .systemMedium: mediumLayout(art: art)
+        default:            largeLayout(art: art)
         }
     }
 
     // Small: cover + title + a single play/pause control.
-    private var smallLayout: some View {
+    private func smallLayout(art: Image?) -> some View {
         VStack(alignment: .leading, spacing: 6) {
-            cover(size: 44)
+            cover(size: 44, art: art)
             Spacer(minLength: 0)
             Text(np.title).font(.subheadline.weight(.semibold)).lineLimit(1)
             Text(np.artist).font(.caption).foregroundStyle(.secondary).lineLimit(1)
@@ -130,40 +140,43 @@ struct MusicWidgetView: View {
                 playPauseButton(diameter: 38, glyph: 16)
             }
         }
-        .foregroundStyle(.white)
     }
 
-    // Medium: cover beside metadata + live progress bar + transport with seek.
-    private var mediumLayout: some View {
+    // Medium: cover beside metadata + (optional) progress bar + transport.
+    // Content is vertically centered so hiding the bar doesn't leave a gap.
+    private func mediumLayout(art: Image?) -> some View {
         HStack(spacing: 14) {
-            cover(size: 76)
-            VStack(alignment: .leading, spacing: 6) {
-                metadata
+            cover(size: 76, art: art)
+            VStack(alignment: .leading, spacing: 8) {
                 Spacer(minLength: 0)
-                seekBar
-                transportRow(diameter: 28, glyph: 12)
-                    .frame(maxWidth: .infinity)   // center the 3 buttons under the bar
+                if settings.showSourceBadge { sourceBadge }
+                metadata
+                if settings.showProgressBar { seekBar }
+                transportRow(diameter: 26, glyph: 12)
+                    .frame(maxWidth: .infinity)
+                Spacer(minLength: 0)
             }
         }
-        .foregroundStyle(.white)
     }
 
-    // Large / extra-large: cover + metadata + live progress + full transport.
-    private var largeLayout: some View {
+    // Large / extra-large: cover + metadata + (optional) progress + transport,
+    // vertically centered so the layout stays balanced when controls are hidden.
+    private func largeLayout(art: Image?) -> some View {
         VStack(alignment: .leading, spacing: 14) {
+            Spacer(minLength: 0)
             HStack(spacing: 16) {
-                cover(size: family == .systemExtraLarge ? 150 : 110)
+                cover(size: family == .systemExtraLarge ? 150 : 110, art: art)
                 VStack(alignment: .leading, spacing: 6) {
-                    sourceBadge
+                    if settings.showSourceBadge { sourceBadge }
                     metadata
                 }
                 Spacer(minLength: 0)
             }
-            seekBar
-            transportRow(diameter: 46, glyph: 18)
+            if settings.showProgressBar { seekBar }
+            transportRow(diameter: 44, glyph: 18)
                 .frame(maxWidth: .infinity)
+            Spacer(minLength: 0)
         }
-        .foregroundStyle(.white)
     }
 
     // MARK: - Pieces
@@ -172,7 +185,7 @@ struct MusicWidgetView: View {
         VStack(alignment: .leading, spacing: 3) {
             Text(np.title).font(.headline).lineLimit(2)
             Text(np.artist).font(.subheadline).foregroundStyle(.white.opacity(0.85)).lineLimit(1)
-            if !np.album.isEmpty {
+            if settings.showAlbum, !np.album.isEmpty {
                 Text(np.album).font(.caption).foregroundStyle(.white.opacity(0.65)).lineLimit(1)
             }
         }
@@ -187,9 +200,9 @@ struct MusicWidgetView: View {
             .overlay(Capsule().strokeBorder(.white.opacity(0.25), lineWidth: 0.5))
     }
 
-    private func cover(size: CGFloat) -> some View {
+    private func cover(size: CGFloat, art: Image?) -> some View {
         Group {
-            if let art = artwork {
+            if let art {
                 art.resizable().scaledToFill()
             } else {
                 ZStack {
@@ -205,8 +218,8 @@ struct MusicWidgetView: View {
         .frame(width: size, height: size)
         .clipShape(.rect(cornerRadius: 14))
         .shadow(color: .black.opacity(0.35), radius: 8, y: 4)
-        .id(np.trackKey)                       // new identity per track…
-        .transition(.opacity.combined(with: .scale(scale: 0.94)))  // …so it crossfades
+        .id(np.trackKey)
+        .transition(.opacity.combined(with: .scale(scale: 0.94)))
     }
 
     private var seekSegments: Int { 24 }
@@ -218,7 +231,6 @@ struct MusicWidgetView: View {
         if np.source != .none, np.durationSeconds > 0 {
             VStack(spacing: 4) {
                 ZStack {
-                    // Animated fill — interpolated live by WidgetKit while playing.
                     Group {
                         if np.isPlaying {
                             ProgressView(timerInterval: np.projectedStartDate...np.projectedEndDate(from: entry.date),
@@ -232,7 +244,6 @@ struct MusicWidgetView: View {
                     .tint(.white)
                     .frame(maxHeight: .infinity, alignment: .center)
 
-                    // Tap-to-seek overlay.
                     HStack(spacing: 0) {
                         ForEach(0..<seekSegments, id: \.self) { i in
                             Button(intent: SeekToPositionIntent(fraction: (Double(i) + 0.5) / Double(seekSegments))) {
@@ -246,8 +257,6 @@ struct MusicWidgetView: View {
                 .frame(height: 16)
 
                 HStack {
-                    // Live elapsed: Text(timerInterval:) counts up in real time,
-                    // anchored to wall-clock, so it stays correct without reloads.
                     Group {
                         if np.isPlaying {
                             Text(timerInterval: np.projectedStartDate...np.projectedEndDate(from: entry.date),
@@ -257,7 +266,7 @@ struct MusicWidgetView: View {
                         }
                     }
                     .monospacedDigit()
-                    .contentTransition(.numericText())   // digits roll smoothly
+                    .contentTransition(.numericText())
                     Spacer()
                     Text(timeString(np.durationSeconds)).monospacedDigit()
                 }
@@ -267,11 +276,24 @@ struct MusicWidgetView: View {
         }
     }
 
+    // Transport: optional shuffle · prev · play/pause · next · optional repeat.
+    // Hidden controls are omitted entirely, so the row reflows and stays centered.
     private func transportRow(diameter: CGFloat, glyph: CGFloat) -> some View {
         HStack(spacing: diameter * 0.5) {
+            if settings.showShuffle {
+                toggleButton(ToggleShuffleIntent(), symbol: "shuffle",
+                             isOn: np.isShuffling ?? false,
+                             diameter: diameter * 0.82, glyph: glyph * 0.85)
+            }
             intentButton(PreviousTrackIntent(), symbol: "backward.fill", diameter: diameter, glyph: glyph)
-            playPauseButton(diameter: diameter * 1.15, glyph: glyph * 1.2)
+            playPauseButton(diameter: diameter * 1.18, glyph: glyph * 1.2)
             intentButton(NextTrackIntent(), symbol: "forward.fill", diameter: diameter, glyph: glyph)
+            if settings.showRepeat {
+                let mode = np.repeatMode ?? .off
+                toggleButton(ToggleRepeatIntent(), symbol: mode.symbol,
+                             isOn: mode.isActive,
+                             diameter: diameter * 0.82, glyph: glyph * 0.85)
+            }
         }
         .disabled(np.source == .none)
     }
@@ -282,22 +304,36 @@ struct MusicWidgetView: View {
                      diameter: diameter, glyph: glyph)
     }
 
+    /// Plain transport button: white glyph on a dark translucent disc.
     private func intentButton<I: AppIntent>(_ intent: I, symbol: String,
                                             diameter: CGFloat, glyph: CGFloat) -> some View {
         Button(intent: intent) {
-            Image(systemName: symbol)
-                .font(.system(size: glyph, weight: .bold))
-                .contentTransition(.symbolEffect(.replace.downUp))  // play⇄pause morphs
-                .foregroundStyle(.white)
-                .shadow(color: .black.opacity(0.5), radius: 2, y: 1)
-                .frame(width: diameter, height: diameter)
-                // Dark translucent disc (NOT .ultraThinMaterial, which renders
-                // near-white in a widget and hides white glyphs).
-                .background(Circle().fill(.black.opacity(0.30)))
-                .overlay(Circle().strokeBorder(.white.opacity(0.45), lineWidth: 1))
-                .contentShape(.circle)
+            discGlyph(symbol, glyph: glyph, diameter: diameter, isOn: false)
+                .contentTransition(.symbolEffect(.replace.downUp))
         }
         .buttonStyle(.plain)
+    }
+
+    /// Toggle button (shuffle/repeat): fills white when ON so its state is clear.
+    private func toggleButton<I: AppIntent>(_ intent: I, symbol: String, isOn: Bool,
+                                            diameter: CGFloat, glyph: CGFloat) -> some View {
+        Button(intent: intent) {
+            discGlyph(symbol, glyph: glyph, diameter: diameter, isOn: isOn)
+        }
+        .buttonStyle(.plain)
+    }
+
+    private func discGlyph(_ symbol: String, glyph: CGFloat, diameter: CGFloat, isOn: Bool) -> some View {
+        Image(systemName: symbol)
+            .font(.system(size: glyph, weight: .bold))
+            .foregroundStyle(isOn ? .black : .white)
+            .shadow(color: .black.opacity(isOn ? 0 : 0.5), radius: 2, y: 1)
+            .frame(width: diameter, height: diameter)
+            // Dark disc normally; filled white when ON. (NOT .ultraThinMaterial,
+            // which renders near-white in a widget and hides white glyphs.)
+            .background(Circle().fill(isOn ? .white.opacity(0.92) : .black.opacity(0.30)))
+            .overlay(Circle().strokeBorder(.white.opacity(isOn ? 0 : 0.45), lineWidth: 1))
+            .contentShape(.circle)
     }
 
     private func timeString(_ seconds: Double) -> String {

@@ -1,7 +1,7 @@
 //  MenuBarView.swift
-//  The menu-bar popover. This runs in the full app context, so it uses REAL
-//  Liquid Glass (.glassEffect / GlassEffectContainer / .buttonStyle(.glass)),
-//  which renders live here (unlike inside the widget snapshot).
+//  The menu-bar popover. Runs in the full app context, so it uses REAL Liquid
+//  Glass (.glassEffect / GlassEffectContainer / .buttonStyle(.glass)) which
+//  renders live here (unlike inside the widget snapshot).
 
 import SwiftUI
 import ServiceManagement
@@ -11,18 +11,19 @@ struct MenuBarView: View {
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
     @State private var showingSettings = false
 
+    private var np: NowPlaying { engine.nowPlaying }
+
     var body: some View {
         ZStack {
             backdrop
-            GlassEffectContainer(spacing: 16) {
-                VStack(spacing: 14) {
-                    if engine.needsAutomationPermission {
-                        permissionBanner
-                    }
+            GlassEffectContainer(spacing: 14) {
+                VStack(spacing: 12) {
+                    if engine.needsAutomationPermission { permissionBanner }
+
                     if showingSettings {
                         SettingsView(engine: engine)
-                            .padding(12)
-                            .glassEffect(.regular, in: .rect(cornerRadius: 18))
+                            .padding(14)
+                            .glassEffect(.regular, in: .rect(cornerRadius: 20))
                     } else {
                         header
                         progress
@@ -35,50 +36,47 @@ struct MenuBarView: View {
         }
         .frame(width: 320)
         .fixedSize(horizontal: false, vertical: true)
+        .foregroundStyle(.primary)
     }
 
-    // MARK: - Backdrop (blurred artwork gives the glass something to refract)
+    // MARK: - Backdrop
 
     @ViewBuilder private var backdrop: some View {
         if let art = engine.artwork, !reduceTransparency {
             Image(nsImage: art)
-                .resizable()
-                .scaledToFill()
-                .frame(width: 320, height: 360)
-                .blur(radius: 60)
-                .opacity(0.55)
+                .resizable().scaledToFill()
+                .frame(width: 320, height: 380)
+                .blur(radius: 70).opacity(0.6)
                 .clipped()
         } else {
-            LinearGradient(
-                colors: [.purple.opacity(0.35), .blue.opacity(0.25), .pink.opacity(0.3)],
-                startPoint: .topLeading, endPoint: .bottomTrailing)
+            LinearGradient(colors: [.purple.opacity(0.4), .blue.opacity(0.28), .pink.opacity(0.32)],
+                           startPoint: .topLeading, endPoint: .bottomTrailing)
         }
     }
 
-    // MARK: - Header (artwork + metadata)
+    // MARK: - Header
 
     private var header: some View {
-        HStack(spacing: 12) {
+        HStack(spacing: 14) {
             artworkThumb
             VStack(alignment: .leading, spacing: 3) {
-                Text(engine.nowPlaying.title)
-                    .font(.headline)
-                    .lineLimit(1)
-                Text(engine.nowPlaying.artist)
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
-                if !engine.nowPlaying.album.isEmpty {
-                    Text(engine.nowPlaying.album)
-                        .font(.caption)
-                        .foregroundStyle(.tertiary)
-                        .lineLimit(1)
+                Text(np.title.isEmpty ? "Nothing Playing" : np.title)
+                    .font(.headline).lineLimit(2)
+                if !np.artist.isEmpty {
+                    Text(np.artist).font(.subheadline)
+                        .foregroundStyle(.secondary).lineLimit(1)
+                }
+                if !np.album.isEmpty {
+                    Label(np.album, systemImage: np.source == .spotify ? "music.note.list" : "music.note")
+                        .font(.caption).foregroundStyle(.tertiary).lineLimit(1)
+                        .labelStyle(.titleAndIcon)
                 }
             }
             Spacer(minLength: 0)
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
         .padding(12)
-        .glassEffect(.regular, in: .rect(cornerRadius: 18))
+        .glassEffect(.regular, in: .rect(cornerRadius: 20))
     }
 
     private var artworkThumb: some View {
@@ -87,58 +85,75 @@ struct MenuBarView: View {
                 Image(nsImage: art).resizable().scaledToFill()
             } else {
                 ZStack {
-                    Rectangle().fill(.ultraThinMaterial)
-                    Image(systemName: "music.note").font(.title2).foregroundStyle(.secondary)
+                    LinearGradient(colors: [.white.opacity(0.2), .black.opacity(0.25)],
+                                   startPoint: .top, endPoint: .bottom)
+                    Image(systemName: "music.note").font(.title).foregroundStyle(.secondary)
                 }
             }
         }
-        .frame(width: 56, height: 56)
-        .clipShape(.rect(cornerRadius: 12))
+        .frame(width: 64, height: 64)
+        .clipShape(.rect(cornerRadius: 14))
+        .shadow(color: .black.opacity(0.25), radius: 6, y: 3)
     }
 
     // MARK: - Progress (live, interpolated between polls)
 
     private var progress: some View {
         TimelineView(.periodic(from: .now, by: 0.5)) { context in
-            let np = engine.nowPlaying
             let pos = np.estimatedPosition(at: context.date)
             let dur = max(np.durationSeconds, 0.001)
             VStack(spacing: 4) {
-                ProgressView(value: min(pos, dur), total: dur)
-                    .tint(.primary)
+                ProgressView(value: min(pos, dur), total: dur).tint(.primary)
                 HStack {
-                    Text(timeString(pos)).font(.caption2).monospacedDigit()
+                    Text(timeString(pos)).monospacedDigit()
                     Spacer()
-                    Text(timeString(np.durationSeconds)).font(.caption2).monospacedDigit()
+                    Text(timeString(np.durationSeconds)).monospacedDigit()
                 }
-                .foregroundStyle(.secondary)
+                .font(.caption2).foregroundStyle(.secondary)
             }
         }
-        .opacity(engine.nowPlaying.source == .none ? 0.3 : 1)
+        .opacity(np.source == .none ? 0.3 : 1)
     }
 
-    // MARK: - Transport
+    // MARK: - Transport (circular Liquid Glass buttons; reflows when hidden)
 
     private var transport: some View {
-        HStack(spacing: 20) {
-            controlButton("backward.fill") { engine.run(.previous) }
-            controlButton(engine.nowPlaying.isPlaying ? "pause.fill" : "play.fill", large: true) {
+        HStack(spacing: 12) {
+            if engine.settings.showShuffle {
+                glassButton("shuffle", size: 13, prominent: np.isShuffling ?? false) {
+                    engine.run(.toggleShuffle)
+                }
+            }
+            glassButton("backward.fill", size: 16) { engine.run(.previous) }
+            glassButton(np.isPlaying ? "pause.fill" : "play.fill", size: 22, prominent: true) {
                 engine.run(.playPause)
             }
-            controlButton("forward.fill") { engine.run(.next) }
+            glassButton("forward.fill", size: 16) { engine.run(.next) }
+            if engine.settings.showRepeat {
+                let mode = np.repeatMode ?? .off
+                glassButton(mode.symbol, size: 13, prominent: mode.isActive) {
+                    engine.run(.toggleRepeat)
+                }
+            }
         }
-        .disabled(engine.nowPlaying.source == .none)
+        .frame(maxWidth: .infinity)
+        .disabled(np.source == .none)
     }
 
-    private func controlButton(_ symbol: String, large: Bool = false, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            Image(systemName: symbol)
-                .font(.system(size: large ? 22 : 16, weight: .semibold))
-                .frame(width: large ? 52 : 40, height: large ? 52 : 40)
-                .contentShape(.rect)
+    @ViewBuilder
+    private func glassButton(_ symbol: String, size: CGFloat, prominent: Bool = false,
+                             action: @escaping () -> Void) -> some View {
+        let label = Image(systemName: symbol)
+            .font(.system(size: size, weight: .semibold))
+            .frame(width: size * 2.4, height: size * 2.4)
+            .contentTransition(.symbolEffect(.replace))
+        if prominent {
+            Button(action: action) { label }
+                .buttonStyle(.glassProminent).buttonBorderShape(.circle)
+        } else {
+            Button(action: action) { label }
+                .buttonStyle(.glass).buttonBorderShape(.circle)
         }
-        .buttonStyle(.glass)
-        .clipShape(.circle)
     }
 
     // MARK: - Footer
@@ -148,31 +163,24 @@ struct MenuBarView: View {
             Button {
                 withAnimation(.smooth(duration: 0.25)) { showingSettings.toggle() }
             } label: {
-                Image(systemName: showingSettings ? "chevron.left.circle.fill" : "gearshape.fill")
-                    .font(.body)
+                Image(systemName: showingSettings ? "chevron.left" : "gearshape.fill").font(.body)
             }
-            .buttonStyle(.plain)
+            .buttonStyle(.glass).buttonBorderShape(.circle)
             .help(showingSettings ? "Back" : "Settings")
 
-            if showingSettings {
-                Text("Settings").font(.caption).foregroundStyle(.secondary)
-            } else {
-                Label(engine.nowPlaying.source.displayName,
-                      systemImage: engine.nowPlaying.source == .spotify ? "music.note.list" : "music.note")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
+            Text(showingSettings ? "Settings" : np.source.displayName)
+                .font(.caption).foregroundStyle(.secondary)
 
             Spacer()
             Menu {
                 Button("Refresh") { engine.pollAsync() }
-                Button("Open Automation Settings") { engine.openAutomationSettings() }
+                Button("Open Automation Settings…") { engine.openAutomationSettings() }
                 Divider()
                 Button("Quit MusicGlass") { NSApp.terminate(nil) }
             } label: {
-                Image(systemName: "ellipsis.circle")
+                Image(systemName: "ellipsis")
             }
-            .menuStyle(.borderlessButton)
+            .menuStyle(.button).buttonStyle(.glass).buttonBorderShape(.circle)
             .fixedSize()
         }
     }
@@ -184,8 +192,7 @@ struct MenuBarView: View {
             Label("Allow Automation", systemImage: "lock.shield")
                 .font(.subheadline.weight(.semibold))
             Text("MusicGlass needs permission to read & control Music and Spotify.")
-                .font(.caption)
-                .foregroundStyle(.secondary)
+                .font(.caption).foregroundStyle(.secondary)
             Button("Grant Permission") { engine.requestAutomationPermission() }
                 .buttonStyle(.glassProminent)
         }

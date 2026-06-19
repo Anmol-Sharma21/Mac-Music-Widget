@@ -36,6 +36,13 @@ struct SettingsView: View {
 
             Divider().opacity(0.4)
 
+            section("Controls", systemImage: "slider.horizontal.3") {
+                toggle("Shuffle button", $engine.settings.showShuffle)
+                toggle("Repeat button", $engine.settings.showRepeat)
+            }
+
+            Divider().opacity(0.4)
+
             toggle("Launch at Login", $engine.settings.launchAtLogin)
         }
     }

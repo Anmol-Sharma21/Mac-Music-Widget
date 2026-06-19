@@ -40,11 +40,20 @@ struct NowPlaying: Codable, Equatable {
     /// Track length in seconds.
     var durationSeconds: Double
 
-    /// Whether repeat is on (one/all for Music, repeating for Spotify).
-    /// Optional so it decodes as nil from snapshots written before this field.
-    var isRepeating: Bool? = nil
+    /// Repeat mode (off / all / one). Optional so it decodes as nil from
+    /// snapshots written before this field.
+    var repeatMode: RepeatMode? = nil
     /// Whether shuffle is on. Optional for backward-compatible decoding.
     var isShuffling: Bool? = nil
+
+    /// Three-state repeat. Apple Music supports all three natively; Spotify
+    /// (boolean `repeating`) only off/all.
+    enum RepeatMode: String, Codable {
+        case off, all, one
+        var isActive: Bool { self != .off }
+        /// SF Symbol for the control.
+        var symbol: String { self == .one ? "repeat.1" : "repeat" }
+    }
 
     /// Filename of the artwork PNG inside the shared container (nil if none).
     /// The host always writes to a single file and bumps `artworkToken` so the

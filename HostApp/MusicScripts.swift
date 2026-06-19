@@ -129,13 +129,14 @@ enum MusicScripts {
         """#
     }
 
-    /// Toggle repeat. Music uses `song repeat` (one/off); Spotify uses `repeating`.
-    static func setRepeat(_ app: MusicApp, on: Bool) -> String {
+    /// Set repeat mode. Music's `song repeat` takes off/all/one natively;
+    /// Spotify's `repeating` is boolean (off → false, all/one → true).
+    static func setRepeat(_ app: MusicApp, mode: NowPlaying.RepeatMode) -> String {
         switch app {
         case .appleMusic:
-            return #"tell application "Music" to set song repeat to \#(on ? "one" : "off")"#
+            return #"tell application "Music" to set song repeat to \#(mode.rawValue)"#
         case .spotify:
-            return #"tell application "Spotify" to set repeating to \#(on ? "true" : "false")"#
+            return #"tell application "Spotify" to set repeating to \#(mode == .off ? "false" : "true")"#
         }
     }
 
