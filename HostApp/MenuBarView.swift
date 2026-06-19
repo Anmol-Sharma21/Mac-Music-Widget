@@ -66,7 +66,7 @@ struct MenuBarView: View {
                     Text(np.artist).font(.subheadline)
                         .foregroundStyle(.secondary).lineLimit(1)
                 }
-                if !np.album.isEmpty {
+                if !np.album.isEmpty, np.album != np.title {
                     Label(np.album, systemImage: np.source == .spotify ? "music.note.list" : "music.note")
                         .font(.caption).foregroundStyle(.tertiary).lineLimit(1)
                         .labelStyle(.titleAndIcon)

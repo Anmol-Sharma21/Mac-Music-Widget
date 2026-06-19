@@ -142,17 +142,18 @@ struct MusicWidgetView: View {
         }
     }
 
-    // Medium: cover beside metadata + (optional) progress bar + transport.
-    // Content is vertically centered so hiding the bar doesn't leave a gap.
+    // Medium: a large cover on the left, with text + controls vertically
+    // centered beside it. Centering keeps it balanced whether or not the
+    // progress bar / shuffle / repeat are shown.
     private func mediumLayout(art: Image?) -> some View {
-        HStack(spacing: 14) {
-            cover(size: 76, art: art)
-            VStack(alignment: .leading, spacing: 8) {
+        HStack(spacing: 16) {
+            cover(size: 104, art: art)
+            VStack(alignment: .leading, spacing: 7) {
                 Spacer(minLength: 0)
                 if settings.showSourceBadge { sourceBadge }
                 metadata
                 if settings.showProgressBar { seekBar }
-                transportRow(diameter: 26, glyph: 12)
+                transportRow(diameter: 30, glyph: 13)
                     .frame(maxWidth: .infinity)
                 Spacer(minLength: 0)
             }
@@ -185,7 +186,7 @@ struct MusicWidgetView: View {
         VStack(alignment: .leading, spacing: 3) {
             Text(np.title).font(.headline).lineLimit(2)
             Text(np.artist).font(.subheadline).foregroundStyle(.white.opacity(0.85)).lineLimit(1)
-            if settings.showAlbum, !np.album.isEmpty {
+            if settings.showAlbum, !np.album.isEmpty, np.album != np.title {
                 Text(np.album).font(.caption).foregroundStyle(.white.opacity(0.65)).lineLimit(1)
             }
         }
