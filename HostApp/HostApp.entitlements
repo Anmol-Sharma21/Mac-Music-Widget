@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <!-- NOTE: the host is intentionally NOT sandboxed. A sandboxed foreground
+         app on macOS 26 fails to surface the Automation (TCC) consent prompt —
+         the Apple Event just hangs. As a local, non-App-Store utility the host
+         runs un-sandboxed (like Terminal) so the prompt displays and Apple
+         Events to Music/Spotify work. The widget extension stays sandboxed
+         (required) and shares data via the App Group below. -->
+
+    <!-- Shared with the widget. MUST be Team-ID-prefixed on macOS 26; the
+         $(TeamIdentifierPrefix) token expands to "<TEAMID>." at sign time, so
+         this works on a free personal team without any portal allocation.
+         App Groups work for non-sandboxed apps too (same container path). -->
+    <key>com.apple.security.application-groups</key>
+    <array>
+        <string>$(TeamIdentifierPrefix)group.com.anmol.musicglass</string>
+    </array>
+
+    <!-- Send Apple Events to Music.app / Spotify (read state + transport). -->
+    <key>com.apple.security.automation.apple-events</key>
+    <true/>
+</dict>
+</plist>

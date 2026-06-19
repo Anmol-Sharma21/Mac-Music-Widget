@@ -1,0 +1,12 @@
+// MusicGlass — code signing template.
+//
+// Copy this file to `Config/Signing.xcconfig` and set DEVELOPMENT_TEAM to your
+// own 10-character Apple Team ID, OR just run `./Scripts/set-team.sh` which
+// detects it and writes the file for you. `Config/Signing.xcconfig` is
+// gitignored so personal signing identifiers never get committed.
+//
+// A free personal Apple ID works for local use (its profiles expire after
+// 7 days — rebuild from Xcode when that happens).
+
+DEVELOPMENT_TEAM =
+CODE_SIGN_STYLE = Automatic
