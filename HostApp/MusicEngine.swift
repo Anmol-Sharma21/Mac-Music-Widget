@@ -35,8 +35,12 @@ final class MusicEngine: ObservableObject {
             if settings.launchAtLogin != oldValue.launchAtLogin {
                 applyLaunchAtLogin(settings.launchAtLogin)
             }
-            forceReloadNextApply = true
-            pollAsync()
+            // Only re-read the players when the chosen-source logic changes;
+            // pure display toggles just need the widget to reload (it re-reads
+            // settings itself). Avoids an AppleScript round-trip per toggle.
+            if settings.sourcePriority != oldValue.sourcePriority {
+                pollAsync(forceReload: true)
+            }
             WidgetCenter.shared.reloadTimelines(ofKind: SharedStore.widgetKind)
         }
     }
@@ -44,9 +48,9 @@ final class MusicEngine: ObservableObject {
     private let scriptQueue = DispatchQueue(label: "com.anmol.musicglass.script", qos: .userInitiated)
     private var timer: Timer?
     private var isPolling = false
+    private var pollToken = 0
     private var lastArtworkTrackKey: String?
     private var preferredSource: NowPlaying.Source = .appleMusic
-    private var forceReloadNextApply = false   // set after a command (e.g. seek)
     private let pollInterval: TimeInterval = 2.0
 
     // MARK: - Lifecycle
@@ -67,17 +71,28 @@ final class MusicEngine: ObservableObject {
 
     // MARK: - Polling (work happens off-main on scriptQueue)
 
-    func pollAsync() {
+    func pollAsync(forceReload: Bool = false) {
         guard !isPolling else { return }
         isPolling = true
+        pollToken &+= 1
+        let token = pollToken
         let preferred = preferredSource
         let priority = settings.sourcePriority
         let lastArtKey = lastArtworkTrackKey
+
+        // Watchdog: a hung/blocked Apple Event must never freeze polling forever.
+        // If this attempt hasn't completed in 5s, release the gate so the next
+        // Timer tick can retry (the stuck read still drains on the serial queue).
+        DispatchQueue.main.asyncAfter(deadline: .now() + 5) { [weak self] in
+            guard let self, self.pollToken == token, self.isPolling else { return }
+            self.isPolling = false
+        }
+
         scriptQueue.async { [weak self] in
             let snapshot = MusicEngine.readSnapshot(priority: priority, preferred: preferred, lastArtworkTrackKey: lastArtKey)
             DispatchQueue.main.async {
-                guard let self else { return }
-                self.apply(snapshot)
+                guard let self, self.pollToken == token else { return }
+                self.apply(snapshot, forceReload: forceReload)
                 self.isPolling = false
             }
         }
@@ -100,7 +115,7 @@ final class MusicEngine: ObservableObject {
     }
 
     private enum ReadResult {
-        case success(NowPlaying)
+        case success(NowPlaying, spotifyArtworkURL: String?)
         case denied
         case empty
     }
@@ -108,7 +123,7 @@ final class MusicEngine: ObservableObject {
     nonisolated static func readSnapshot(priority: MusicGlassSettings.SourcePriority,
                                          preferred: NowPlaying.Source,
                                          lastArtworkTrackKey: String?) -> Snapshot {
-        var candidates: [NowPlaying] = []
+        var candidates: [(np: NowPlaying, artURL: String?)] = []
         var permissionDenied = false
         var accessConfirmed = false
 
@@ -117,13 +132,15 @@ final class MusicEngine: ObservableObject {
         // app is a normal foreground window so the prompt actually displays.
         for app in [MusicApp.appleMusic, .spotify] where isRunning(app) {
             switch readState(app) {
-            case .success(let np): candidates.append(np); accessConfirmed = true
-            case .empty:           accessConfirmed = true   // script ran, nothing playing
-            case .denied:          permissionDenied = true
+            case .success(let np, let art): candidates.append((np, art)); accessConfirmed = true
+            case .empty:                    accessConfirmed = true   // script ran, nothing playing
+            case .denied:                   permissionDenied = true
             }
         }
 
-        let chosen = choose(from: candidates, priority: priority, preferred: preferred) ?? .nothing
+        let chosen = choose(from: candidates.map(\.np), priority: priority, preferred: preferred) ?? .nothing
+        // Spotify artwork URL captured in the SAME read (no second Apple Event).
+        let chosenArtURL = candidates.first(where: { $0.np.trackKey == chosen.trackKey })?.artURL
 
         var artwork: ArtworkResult = .unchanged
         if chosen.trackKey != lastArtworkTrackKey {
@@ -139,7 +156,7 @@ final class MusicEngine: ObservableObject {
                     artwork = .cleared
                 }
             case .spotify:
-                if let urlString = spotifyArtworkURL(), let url = URL(string: urlString) {
+                if let urlString = chosenArtURL, let url = URL(string: urlString) {
                     artwork = .spotify(url)
                 } else {
                     artwork = .cleared
@@ -178,6 +195,20 @@ final class MusicEngine: ObservableObject {
         // Spotify reports duration in MILLISECONDS; Apple Music in seconds.
         let duration = (app == .spotify) ? rawDuration / 1000.0 : rawDuration
 
+        // Music:   …dur␟songRepeat␟shuffleEnabled
+        // Spotify: …dur␟artworkURL␟repeating␟shuffling
+        var isRepeating: Bool?
+        var isShuffling: Bool?
+        var spotifyArt: String?
+        if app == .appleMusic {
+            if f.count >= 7 { isRepeating = (f[6] != "off") }
+            if f.count >= 8 { isShuffling = (f[7] == "true") }
+        } else {
+            if f.count >= 7, !f[6].isEmpty { spotifyArt = f[6] }
+            if f.count >= 8 { isRepeating = (f[7] == "true") }
+            if f.count >= 9 { isShuffling = (f[8] == "true") }
+        }
+
         var np = NowPlaying(
             source: app.source,
             state: state,
@@ -186,12 +217,14 @@ final class MusicEngine: ObservableObject {
             album: f[3],
             positionSeconds: Double(f[4]) ?? 0,
             durationSeconds: duration,
+            isRepeating: isRepeating,
+            isShuffling: isShuffling,
             artworkFilename: SharedStore.artworkFileURL?.lastPathComponent,
             artworkToken: "",
             updatedAt: Date()
         )
         np.artworkToken = np.trackKey
-        return .success(np)
+        return .success(np, spotifyArtworkURL: spotifyArt)
     }
 
     /// Pick which player to show. Explicit priority always prefers that source
@@ -219,14 +252,6 @@ final class MusicEngine: ObservableObject {
         }
     }
 
-    nonisolated private static func spotifyArtworkURL() -> String? {
-        guard isRunning(.spotify),
-              let result = AppleScriptRunner.runOrNil(MusicScripts.spotifyRead),
-              result != "stopped" else { return nil }
-        let f = result.components(separatedBy: MusicScripts.sep)
-        return f.count >= 7 ? f[6] : nil
-    }
-
     nonisolated private static func pngData(from image: NSImage) -> Data? {
         guard let tiff = image.tiffRepresentation,
               let rep = NSBitmapImageRep(data: tiff) else { return nil }
@@ -235,9 +260,13 @@ final class MusicEngine: ObservableObject {
 
     // MARK: - Applying state (main actor)
 
-    private func apply(_ snapshot: Snapshot) {
+    private func apply(_ snapshot: Snapshot, forceReload: Bool = false) {
         needsAutomationPermission = snapshot.permissionDenied
-        if snapshot.accessConfirmed { hasMusicAccess = true }
+        if snapshot.accessConfirmed {
+            hasMusicAccess = true
+        } else if snapshot.permissionDenied {
+            hasMusicAccess = false   // a running player was denied → allow onboarding to reappear
+        }
 
         let previous = nowPlaying
         let next = snapshot.nowPlaying
@@ -258,14 +287,19 @@ final class MusicEngine: ObservableObject {
             if let url = SharedStore.artworkFileURL { try? png.write(to: url, options: .atomic) }
         case .spotify(let url):
             lastArtworkTrackKey = next.trackKey
+            // Clear the previous track's art immediately so the widget shows a
+            // placeholder (not the old cover) until the new one downloads.
+            artwork = nil
+            removeArtworkFile()
             downloadSpotifyArtwork(url, for: next.trackKey)
         }
 
-        let meaningful = next.trackKey != previous.trackKey
+        let meaningful = forceReload
+            || next.trackKey != previous.trackKey
             || next.state != previous.state
             || next.source != previous.source
-            || forceReloadNextApply
-        forceReloadNextApply = false
+            || next.isRepeating != previous.isRepeating
+            || next.isShuffling != previous.isShuffling
         if meaningful {
             WidgetCenter.shared.reloadTimelines(ofKind: SharedStore.widgetKind)
         }
@@ -291,9 +325,12 @@ final class MusicEngine: ObservableObject {
 
     // MARK: - Commands (from the widget, or the popover)
 
+    /// Drain ALL pending commands in order (rapid taps no longer collapse to one;
+    /// also covers Darwin-notification coalescing where N posts deliver once).
     func executePendingCommand() {
-        guard let command = SharedStore.dequeueCommand() else { return }
-        execute(command)
+        for command in SharedStore.dequeueAllCommands() {
+            execute(command)
+        }
     }
 
     /// Convenience for the popover's own buttons.
@@ -305,20 +342,24 @@ final class MusicEngine: ObservableObject {
         guard let app = resolve(command.target) else { return }
         let script: String
         switch command.action {
-        case .playPause:    script = MusicScripts.control(app, .playPause)
-        case .next:         script = MusicScripts.control(app, .nextTrack)
-        case .previous:     script = MusicScripts.control(app, .previousTrack)
-        case .seekForward:  script = MusicScripts.seek(app, by: 15)
-        case .seekBackward: script = MusicScripts.seek(app, by: -15)
+        case .playPause:     script = MusicScripts.control(app, .playPause)
+        case .next:          script = MusicScripts.control(app, .nextTrack)
+        case .previous:      script = MusicScripts.control(app, .previousTrack)
+        case .seekForward:   script = MusicScripts.seek(app, by: 15)
+        case .seekBackward:  script = MusicScripts.seek(app, by: -15)
         case .seekTo:
+            guard nowPlaying.durationSeconds > 0 else { return }
             let fraction = min(max(command.value ?? 0, 0), 1)
             script = MusicScripts.seekTo(app, position: fraction * nowPlaying.durationSeconds)
+        case .toggleRepeat:  script = MusicScripts.setRepeat(app, on: !(nowPlaying.isRepeating ?? false))
+        case .toggleShuffle: script = MusicScripts.setShuffle(app, on: !(nowPlaying.isShuffling ?? false))
         }
-        forceReloadNextApply = true   // make the post-command poll refresh the widget
         scriptQueue.async { [weak self] in
             _ = try? AppleScriptRunner.run(script)
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
-                Task { @MainActor in self?.pollAsync() }
+                // forceReload guarantees the widget refreshes even for changes
+                // (seek/repeat/shuffle) that don't alter track/state/source.
+                Task { @MainActor in self?.pollAsync(forceReload: true) }
             }
         }
     }

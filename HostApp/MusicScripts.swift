@@ -48,7 +48,8 @@ enum MusicScripts {
 
     // MARK: - Reading state
 
-    /// Apple Music. Returns: state␟title␟artist␟album␟position␟duration
+    /// Apple Music. Returns:
+    /// state␟title␟artist␟album␟position␟duration␟songRepeat␟shuffleEnabled
     static let appleMusicRead = #"""
     tell application "Music"
       try
@@ -56,14 +57,15 @@ enum MusicScripts {
         if pState is "stopped" then return "stopped"
         set trk to current track
         set sep to (ASCII character 31)
-        return pState & sep & (name of trk) & sep & (artist of trk) & sep & (album of trk) & sep & (player position as text) & sep & (duration of trk as text)
+        return pState & sep & (name of trk) & sep & (artist of trk) & sep & (album of trk) & sep & (player position as text) & sep & (duration of trk as text) & sep & (song repeat as text) & sep & (shuffle enabled as text)
       on error errMsg number errNum
         return "stopped"
       end try
     end tell
     """#
 
-    /// Spotify. Returns: state␟title␟artist␟album␟position␟durationMillis␟artworkURL
+    /// Spotify. Returns:
+    /// state␟title␟artist␟album␟position␟durationMillis␟artworkURL␟repeating␟shuffling
     static let spotifyRead = #"""
     tell application "Spotify"
       try
@@ -71,7 +73,7 @@ enum MusicScripts {
         if pState is "stopped" then return "stopped"
         set trk to current track
         set sep to (ASCII character 31)
-        return pState & sep & (name of trk) & sep & (artist of trk) & sep & (album of trk) & sep & (player position as text) & sep & (duration of trk as text) & sep & (artwork url of trk)
+        return pState & sep & (name of trk) & sep & (artist of trk) & sep & (album of trk) & sep & (player position as text) & sep & (duration of trk as text) & sep & (artwork url of trk) & sep & (repeating as text) & sep & (shuffling as text)
       on error errMsg number errNum
         return "stopped"
       end try
@@ -125,5 +127,25 @@ enum MusicScripts {
         #"""
         tell application "\#(app.rawValue)" to set player position to \#(position)
         """#
+    }
+
+    /// Toggle repeat. Music uses `song repeat` (one/off); Spotify uses `repeating`.
+    static func setRepeat(_ app: MusicApp, on: Bool) -> String {
+        switch app {
+        case .appleMusic:
+            return #"tell application "Music" to set song repeat to \#(on ? "one" : "off")"#
+        case .spotify:
+            return #"tell application "Spotify" to set repeating to \#(on ? "true" : "false")"#
+        }
+    }
+
+    /// Toggle shuffle. Music uses `shuffle enabled`; Spotify uses `shuffling`.
+    static func setShuffle(_ app: MusicApp, on: Bool) -> String {
+        switch app {
+        case .appleMusic:
+            return #"tell application "Music" to set shuffle enabled to \#(on ? "true" : "false")"#
+        case .spotify:
+            return #"tell application "Spotify" to set shuffling to \#(on ? "true" : "false")"#
+        }
     }
 }

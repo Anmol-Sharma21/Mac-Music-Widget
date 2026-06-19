@@ -80,16 +80,20 @@ enum SharedStore {
 
     // MARK: - Settings (host writes, both read)
 
-    private static let settingsKey = "settings"
+    // Stored as a FILE (not UserDefaults), so the widget always reads the current
+    // value — App-Group UserDefaults can serve a stale cached copy across processes.
+    static var settingsFileURL: URL? {
+        containerURL?.appendingPathComponent("settings.json")
+    }
 
     static func writeSettings(_ settings: MusicGlassSettings) {
-        guard let defaults, let data = try? encoder.encode(settings) else { return }
-        defaults.set(data, forKey: settingsKey)
+        guard let url = settingsFileURL, let data = try? encoder.encode(settings) else { return }
+        try? data.write(to: url, options: .atomic)
     }
 
     static func readSettings() -> MusicGlassSettings {
-        guard let defaults,
-              let data = defaults.data(forKey: settingsKey),
+        guard let url = settingsFileURL,
+              let data = try? Data(contentsOf: url),
               let settings = try? decoder.decode(MusicGlassSettings.self, from: data)
         else { return .default }
         return settings
@@ -97,21 +101,24 @@ enum SharedStore {
 
     // MARK: - Command queue (widget writes, host reads)
 
-    private static let pendingCommandKey = "pendingCommand"
+    private static let pendingCommandKey = "pendingCommands"
 
+    /// Append a command. Stored as an ORDERED list so rapid taps don't overwrite
+    /// each other (the old single-slot key dropped all but the last command).
     static func enqueueCommand(_ command: PlaybackCommand) {
         guard let defaults, let data = try? encoder.encode(command) else { return }
-        defaults.set(data, forKey: pendingCommandKey)
+        var list = (defaults.array(forKey: pendingCommandKey) as? [Data]) ?? []
+        list.append(data)
+        defaults.set(list, forKey: pendingCommandKey)
     }
 
-    /// Reads and clears the pending command (host side).
-    static func dequeueCommand() -> PlaybackCommand? {
+    /// Reads and clears ALL pending commands in FIFO order (host side).
+    static func dequeueAllCommands() -> [PlaybackCommand] {
         guard let defaults,
-              let data = defaults.data(forKey: pendingCommandKey),
-              let command = try? decoder.decode(PlaybackCommand.self, from: data)
-        else { return nil }
+              let list = defaults.array(forKey: pendingCommandKey) as? [Data]
+        else { return [] }
         defaults.removeObject(forKey: pendingCommandKey)
-        return command
+        return list.compactMap { try? decoder.decode(PlaybackCommand.self, from: $0) }
     }
 
     // MARK: - Darwin notifications
@@ -142,11 +149,15 @@ enum SharedStore {
            let value = SecTaskCopyValueForEntitlement(
                task, "com.apple.security.application-groups" as CFString, nil),
            let groups = value as? [String],
-           let first = groups.first(where: { $0.contains("group.\(base)") }) ?? groups.first {
+           // Require an exact suffix match — don't bind to an unrelated group.
+           let first = groups.first(where: { $0.hasSuffix("group.\(base)") }) {
             return first
         }
-        // Last-resort fallback (works only if a non-prefixed group container
-        // happens to exist). Surfaced in logs by callers when the container is nil.
+        // Resolution failed → the entitlement is missing/misnamed and the shared
+        // container can't work. Fail loudly instead of silently returning a
+        // non-functional (non-Team-ID-prefixed) id that breaks host↔widget sync.
+        NSLog("[MusicGlass] FATAL: could not resolve App Group entitlement; shared container unavailable. Check signing/entitlements.")
+        assertionFailure("App Group entitlement unresolved")
         return "group.\(base)"
     }
 }
@@ -160,6 +171,8 @@ struct PlaybackCommand: Codable, Equatable {
         case seekForward   // jump the playhead +15s
         case seekBackward  // jump the playhead -15s
         case seekTo        // jump to `value` (0...1 fraction of the track)
+        case toggleRepeat  // toggle repeat on/off
+        case toggleShuffle // toggle shuffle on/off
     }
 
     /// The widget always targets `.active` — the host controls whatever source

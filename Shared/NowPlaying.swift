@@ -40,6 +40,12 @@ struct NowPlaying: Codable, Equatable {
     /// Track length in seconds.
     var durationSeconds: Double
 
+    /// Whether repeat is on (one/all for Music, repeating for Spotify).
+    /// Optional so it decodes as nil from snapshots written before this field.
+    var isRepeating: Bool? = nil
+    /// Whether shuffle is on. Optional for backward-compatible decoding.
+    var isShuffling: Bool? = nil
+
     /// Filename of the artwork PNG inside the shared container (nil if none).
     /// The host always writes to a single file and bumps `artworkToken` so the
     /// widget knows to invalidate its cached image.

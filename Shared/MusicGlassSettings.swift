@@ -29,6 +29,8 @@ struct MusicGlassSettings: Codable, Equatable {
     var showProgressBar: Bool = true
     var showSourceBadge: Bool = true
     var showArtworkBackground: Bool = true   // blurred album-art backdrop vs. plain gradient
+    var showRepeat: Bool = true              // repeat toggle button
+    var showShuffle: Bool = true             // shuffle toggle button
 
     // Behavior.
     var launchAtLogin: Bool = false

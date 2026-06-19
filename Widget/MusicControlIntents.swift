@@ -47,6 +47,22 @@ struct PreviousTrackIntent: AppIntent {
     }
 }
 
+struct ToggleRepeatIntent: AppIntent {
+    static let title: LocalizedStringResource = "Toggle Repeat"
+    func perform() async throws -> some IntentResult {
+        dispatch(.toggleRepeat)
+        return .result()
+    }
+}
+
+struct ToggleShuffleIntent: AppIntent {
+    static let title: LocalizedStringResource = "Toggle Shuffle"
+    func perform() async throws -> some IntentResult {
+        dispatch(.toggleShuffle)
+        return .result()
+    }
+}
+
 /// Seek to a fraction (0...1) of the track — used by the tappable progress bar.
 /// Each invisible segment of the bar carries a different fraction.
 struct SeekToPositionIntent: AppIntent {
