@@ -137,7 +137,7 @@ struct MusicWidgetView: View {
             Text(np.artist).font(.caption).foregroundStyle(.secondary).lineLimit(1)
             HStack {
                 Spacer()
-                playPauseButton(diameter: 38, glyph: 19)
+                playPauseButton(diameter: 40, glyph: 21)
             }
         }
     }
@@ -153,7 +153,7 @@ struct MusicWidgetView: View {
                 if settings.showSourceBadge { sourceBadge }
                 metadata
                 if settings.showProgressBar { seekBar }
-                transportRow(diameter: 30, glyph: 15)
+                transportRow(diameter: 32, glyph: 17)
                     .frame(maxWidth: .infinity)
                 Spacer(minLength: 0)
             }
@@ -174,7 +174,7 @@ struct MusicWidgetView: View {
                 Spacer(minLength: 0)
             }
             if settings.showProgressBar { seekBar }
-            transportRow(diameter: 44, glyph: 20)
+            transportRow(diameter: 46, glyph: 23)
                 .frame(maxWidth: .infinity)
             Spacer(minLength: 0)
         }
@@ -331,7 +331,8 @@ struct MusicWidgetView: View {
                             opacity: Double) -> some View {
         Image(systemName: symbol)
             .font(.system(size: glyph, weight: .medium))
-            .foregroundStyle(.white.opacity(opacity))
+            // Soft grey rather than stark white, to sit in the glass chrome.
+            .foregroundStyle(Color(white: 0.86).opacity(opacity))
             .shadow(color: .black.opacity(0.3), radius: 3, y: 1)
             .frame(width: diameter, height: diameter)
             .contentShape(.circle)

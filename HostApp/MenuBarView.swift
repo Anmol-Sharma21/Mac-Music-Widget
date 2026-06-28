@@ -120,20 +120,20 @@ struct MenuBarView: View {
     // MARK: - Transport (minimal white glyphs, native-Music style; reflows when hidden)
 
     private var transport: some View {
-        HStack(spacing: 26) {
+        HStack(spacing: 28) {
             if engine.settings.showShuffle {
-                glyphButton("shuffle", size: 15, active: np.isShuffling ?? false) {
+                glyphButton("shuffle", size: 17, active: np.isShuffling ?? false) {
                     engine.run(.toggleShuffle)
                 }
             }
-            glyphButton("backward.fill", size: 24) { engine.run(.previous) }
-            glyphButton(np.isPlaying ? "pause.fill" : "play.fill", size: 32) {
+            glyphButton("backward.fill", size: 28) { engine.run(.previous) }
+            glyphButton(np.isPlaying ? "pause.fill" : "play.fill", size: 38) {
                 engine.run(.playPause)
             }
-            glyphButton("forward.fill", size: 24) { engine.run(.next) }
+            glyphButton("forward.fill", size: 28) { engine.run(.next) }
             if engine.settings.showRepeat {
                 let mode = np.repeatMode ?? .off
-                glyphButton(mode.symbol, size: 15, active: mode.isActive) {
+                glyphButton(mode.symbol, size: 17, active: mode.isActive) {
                     engine.run(.toggleRepeat)
                 }
             }
@@ -149,14 +149,15 @@ struct MenuBarView: View {
         Button(action: action) {
             Image(systemName: symbol)
                 .font(.system(size: size, weight: .medium))
-                .foregroundStyle(.white.opacity(active ? 1 : 0.92))
+                // Soft grey to sit in the glass, not stark white. Brightens when active.
+                .foregroundStyle(Color(white: active ? 0.96 : 0.82))
                 .frame(width: size + 14, height: size + 14)
                 .contentShape(.rect)
                 .contentTransition(.symbolEffect(.replace))
                 .shadow(color: .black.opacity(0.25), radius: 3, y: 1)
         }
         .buttonStyle(.plain)
-        .opacity(active || size > 16 ? 1 : 0.7)
+        .opacity(active || size > 18 ? 1 : 0.7)
     }
 
     // MARK: - Footer
