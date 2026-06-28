@@ -156,7 +156,7 @@ struct MenuBarView: View {
                 .contentTransition(.symbolEffect(.replace))
                 .shadow(color: .black.opacity(0.25), radius: 3, y: 1)
         }
-        .buttonStyle(.plain)
+        .buttonStyle(PressableGlyphStyle())
         .opacity(active || size > 18 ? 1 : 0.7)
     }
 
@@ -210,5 +210,17 @@ struct MenuBarView: View {
         guard seconds.isFinite, seconds >= 0 else { return "0:00" }
         let total = Int(seconds)
         return String(format: "%d:%02d", total / 60, total % 60)
+    }
+}
+
+/// Tactile transport button: springs down + dims while pressed, bounces back on
+/// release. Gives the flat glyphs a physical, Apple-style feel.
+private struct PressableGlyphStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .scaleEffect(configuration.isPressed ? 0.78 : 1)
+            .opacity(configuration.isPressed ? 0.65 : 1)
+            .animation(.spring(response: 0.28, dampingFraction: 0.55),
+                       value: configuration.isPressed)
     }
 }

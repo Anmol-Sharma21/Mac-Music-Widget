@@ -320,6 +320,7 @@ struct MusicWidgetView: View {
                                             diameter: CGFloat, glyph: CGFloat) -> some View {
         Button(intent: intent) {
             glyphLabel(symbol, glyph: glyph, diameter: diameter, opacity: isOn ? 1 : 0.5)
+                .contentTransition(.symbolEffect(.replace))
         }
         .buttonStyle(.plain)
     }
