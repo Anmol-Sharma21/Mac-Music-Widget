@@ -137,7 +137,7 @@ struct MusicWidgetView: View {
             Text(np.artist).font(.caption).foregroundStyle(.secondary).lineLimit(1)
             HStack {
                 Spacer()
-                playPauseButton(diameter: 38, glyph: 16)
+                playPauseButton(diameter: 38, glyph: 19)
             }
         }
     }
@@ -153,7 +153,7 @@ struct MusicWidgetView: View {
                 if settings.showSourceBadge { sourceBadge }
                 metadata
                 if settings.showProgressBar { seekBar }
-                transportRow(diameter: 30, glyph: 13)
+                transportRow(diameter: 30, glyph: 15)
                     .frame(maxWidth: .infinity)
                 Spacer(minLength: 0)
             }
@@ -174,7 +174,7 @@ struct MusicWidgetView: View {
                 Spacer(minLength: 0)
             }
             if settings.showProgressBar { seekBar }
-            transportRow(diameter: 44, glyph: 18)
+            transportRow(diameter: 44, glyph: 20)
                 .frame(maxWidth: .infinity)
             Spacer(minLength: 0)
         }
@@ -305,35 +305,35 @@ struct MusicWidgetView: View {
                      diameter: diameter, glyph: glyph)
     }
 
-    /// Plain transport button: white glyph on a dark translucent disc.
+    /// Plain transport button: flat white glyph, no disc (native-Music style).
     private func intentButton<I: AppIntent>(_ intent: I, symbol: String,
                                             diameter: CGFloat, glyph: CGFloat) -> some View {
         Button(intent: intent) {
-            discGlyph(symbol, glyph: glyph, diameter: diameter, isOn: false)
+            glyphLabel(symbol, glyph: glyph, diameter: diameter, opacity: 1)
                 .contentTransition(.symbolEffect(.replace.downUp))
         }
         .buttonStyle(.plain)
     }
 
-    /// Toggle button (shuffle/repeat): fills white when ON so its state is clear.
+    /// Toggle button (shuffle/repeat): full-white when ON, dimmed when OFF.
     private func toggleButton<I: AppIntent>(_ intent: I, symbol: String, isOn: Bool,
                                             diameter: CGFloat, glyph: CGFloat) -> some View {
         Button(intent: intent) {
-            discGlyph(symbol, glyph: glyph, diameter: diameter, isOn: isOn)
+            glyphLabel(symbol, glyph: glyph, diameter: diameter, opacity: isOn ? 1 : 0.5)
         }
         .buttonStyle(.plain)
     }
 
-    private func discGlyph(_ symbol: String, glyph: CGFloat, diameter: CGFloat, isOn: Bool) -> some View {
+    /// A flat white SF Symbol with a soft shadow for legibility on the blurred
+    /// artwork. No disc — real glass renders white inside widgets, and the dark
+    /// discs read as heavy; native widgets use plain white glyphs.
+    private func glyphLabel(_ symbol: String, glyph: CGFloat, diameter: CGFloat,
+                            opacity: Double) -> some View {
         Image(systemName: symbol)
-            .font(.system(size: glyph, weight: .bold))
-            .foregroundStyle(isOn ? .black : .white)
-            .shadow(color: .black.opacity(isOn ? 0 : 0.5), radius: 2, y: 1)
+            .font(.system(size: glyph, weight: .medium))
+            .foregroundStyle(.white.opacity(opacity))
+            .shadow(color: .black.opacity(0.3), radius: 3, y: 1)
             .frame(width: diameter, height: diameter)
-            // Dark disc normally; filled white when ON. (NOT .ultraThinMaterial,
-            // which renders near-white in a widget and hides white glyphs.)
-            .background(Circle().fill(isOn ? .white.opacity(0.92) : .black.opacity(0.30)))
-            .overlay(Circle().strokeBorder(.white.opacity(isOn ? 0 : 0.45), lineWidth: 1))
             .contentShape(.circle)
     }
 
