@@ -117,45 +117,46 @@ struct MenuBarView: View {
         .opacity(np.source == .none ? 0.3 : 1)
     }
 
-    // MARK: - Transport (circular Liquid Glass; reflows when controls hidden)
+    // MARK: - Transport (minimal white glyphs, native-Music style; reflows when hidden)
 
     private var transport: some View {
-        HStack(spacing: 12) {
+        HStack(spacing: 26) {
             if engine.settings.showShuffle {
-                glassButton("shuffle", size: 13, active: np.isShuffling ?? false) {
+                glyphButton("shuffle", size: 15, active: np.isShuffling ?? false) {
                     engine.run(.toggleShuffle)
                 }
             }
-            glassButton("backward.fill", size: 16) { engine.run(.previous) }
-            glassButton(np.isPlaying ? "pause.fill" : "play.fill", size: 22, prominent: true) {
+            glyphButton("backward.fill", size: 24) { engine.run(.previous) }
+            glyphButton(np.isPlaying ? "pause.fill" : "play.fill", size: 32) {
                 engine.run(.playPause)
             }
-            glassButton("forward.fill", size: 16) { engine.run(.next) }
+            glyphButton("forward.fill", size: 24) { engine.run(.next) }
             if engine.settings.showRepeat {
                 let mode = np.repeatMode ?? .off
-                glassButton(mode.symbol, size: 13, active: mode.isActive) {
+                glyphButton(mode.symbol, size: 15, active: mode.isActive) {
                     engine.run(.toggleRepeat)
                 }
             }
         }
         .frame(maxWidth: .infinity)
+        .padding(.vertical, 2)
         .disabled(np.source == .none)
     }
 
     @ViewBuilder
-    private func glassButton(_ symbol: String, size: CGFloat, prominent: Bool = false,
+    private func glyphButton(_ symbol: String, size: CGFloat,
                              active: Bool = false, action: @escaping () -> Void) -> some View {
-        let label = Image(systemName: symbol)
-            .font(.system(size: size, weight: .semibold))
-            .frame(width: size * 2.5, height: size * 2.5)
-            .contentTransition(.symbolEffect(.replace))
-        if prominent || active {
-            Button(action: action) { label }
-                .buttonStyle(.glassProminent).buttonBorderShape(.circle)
-        } else {
-            Button(action: action) { label }
-                .buttonStyle(.glass).buttonBorderShape(.circle)
+        Button(action: action) {
+            Image(systemName: symbol)
+                .font(.system(size: size, weight: .medium))
+                .foregroundStyle(.white.opacity(active ? 1 : 0.92))
+                .frame(width: size + 14, height: size + 14)
+                .contentShape(.rect)
+                .contentTransition(.symbolEffect(.replace))
+                .shadow(color: .black.opacity(0.25), radius: 3, y: 1)
         }
+        .buttonStyle(.plain)
+        .opacity(active || size > 16 ? 1 : 0.7)
     }
 
     // MARK: - Footer
